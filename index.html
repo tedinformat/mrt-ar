@@ -1,94 +1,4 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <title>捷運窗景 AR 濾鏡拍照</title>
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
-
-    <style>
-      body { margin: 0; overflow: hidden; }
-      
-      /* --- UI 共用層 --- */
-      .ui-container {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        pointer-events: none; z-index: 999;
-        display: flex; flex-direction: column; justify-content: center; align-items: center;
-      }
-
-      /* --- 引導層 --- */
-      #guide-ui {
-        display: flex; flex-direction: column; align-items: center;
-        transition: opacity 0.5s;
-      }
-      .guide-frame {
-        width: 90vw; height: 60vh;
-        border: 3px dashed rgba(255, 255, 255, 0.8);
-        border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5);
-      }
-      .instruction {
-        margin-top: 25px; color: white; background: rgba(0,0,0,0.7);
-        padding: 12px 24px; border-radius: 30px; font-family: sans-serif;
-        font-size: 18px; text-align: center; text-shadow: 1px 1px 2px black;
-      }
-
-      /* --- 拍照層 --- */
-      #photo-ui {
-        display: none; /* 預設隱藏 */
-        justify-content: center; align-items: flex-end;
-        padding-bottom: 40px;
-        transition: opacity 0.5s;
-      }
-      /* 快門按鈕樣式 */
-      .shutter-button {
-        width: 70px; height: 70px;
-        background-color: rgba(255, 255, 255, 0.9);
-        border-radius: 50%;
-        border: 4px solid rgba(220, 220, 220, 0.8);
-        cursor: pointer; pointer-events: auto;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-      }
-      .shutter-button:active { background-color: white; transform: scale(0.95); }
-    </style>
-  </head>
-  <body>
-
-    <div class="ui-container">
-      <div id="guide-ui">
-        <div class="guide-frame"></div>
-        <div class="instruction">請將虛線框對準窗戶角落貼紙</div>
-      </div>
-      <div id="photo-ui">
-        <div class="shutter-button" id="shutterBtn"></div>
-      </div>
-    </div>
-
-    <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind; uiScanning: yes;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights, preserveDrawingBuffer: true" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false">
-
-      <a-assets>
-        <img id="barcodeImg" src="./barcode.png" />
-      </a-assets>
-
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-      <a-entity id="mytarget" mindar-image-target="targetIndex: 0">
-        <a-image 
-          src="#barcodeImg" 
-          position="10.6 7.4 0.05" 
-          scale="22.2 15.8 1" 
-          rotation="0 0 0" 
-          opacity="0.95" 
-          alpha-test="0.5"
-        ></a-image>
-      </a-entity>
-    </a-scene>
-
-    <script>
+<script>
       document.addEventListener("DOMContentLoaded", function() {
         const guideUI = document.querySelector('#guide-ui');
         const photoUI = document.querySelector('#photo-ui');
@@ -96,7 +6,7 @@
         const target = document.querySelector('#mytarget');
         const sceneEl = document.querySelector('a-scene');
 
-        // 監聽 AR 事件：控制 UI 顯示/隱藏
+        // UI 控制事件 (維持不變)
         target.addEventListener("targetFound", event => {
           guideUI.style.display = 'none';
           photoUI.style.display = 'flex';
@@ -106,52 +16,54 @@
           photoUI.style.display = 'none';
         });
 
-        // --- 拍照核心邏輯 (Canvas 合併術) ---
+        // --- 修正後的拍照核心邏輯 ---
         shutterBtn.addEventListener('click', function() {
-          // 1. 暫時隱藏按鈕，避免拍進去
+          
+          // 1. 檢查必要元素是否存在
+          const video = document.querySelector('video'); 
+          const arCanvas = sceneEl.canvas;
+          if (!video || !arCanvas) return;
+
+          // 2. 暫時隱藏按鈕
           photoUI.style.display = 'none';
 
-          // 稍微延遲確保 UI 已隱藏
-          setTimeout(() => {
-              // 2. 抓取關鍵元素
-              // MindAR 自動生成的攝影機影片標籤
-              const video = document.querySelector('video'); 
-              // A-Frame 負責繪製 AR 圖案的畫布
-              const arCanvas = sceneEl.canvas; 
-
-              if (!video || !arCanvas) {
-                  alert("攝影機尚未準備好，請稍後再試");
-                  photoUI.style.display = 'flex';
-                  return;
-              }
-
-              // 3. 創建一個新的暫時畫布來合併兩者
+          // 3. 使用 requestAnimationFrame 確保在畫面渲染的當下進行截圖
+          // 這比 setTimeout 更能確保抓到有內容的畫布
+          requestAnimationFrame(() => {
+              
+              // 建立合併用的畫布，大小以攝影機影片為準
               const mergeCanvas = document.createElement('canvas');
               mergeCanvas.width = video.videoWidth;
               mergeCanvas.height = video.videoHeight;
               const ctx = mergeCanvas.getContext('2d');
 
-              // 4. 【關鍵步驟】先把攝影機影片畫上去當背景
-              // 注意：我們假設是使用後鏡頭，不需要水平翻轉
+              // --- 步驟 A: 繪製背景 (攝影機) ---
+              // 將影片填滿整個畫布
               ctx.drawImage(video, 0, 0, mergeCanvas.width, mergeCanvas.height);
 
-              // 5. 【關鍵步驟】再把 AR 畫布疊加上去
-              // 需要配合影片畫布的大小進行繪製
-              ctx.drawImage(arCanvas, 0, 0, mergeCanvas.width, mergeCanvas.height);
+              // --- 步驟 B: 繪製前景 (AR圖案) [關鍵修正!] ---
+              // 我們必須使用 9 個參數的 drawImage 方法，明確指定來源畫布的尺寸。
+              // 這樣在 Retina 螢幕上，才能將高解析度的 AR 畫布正確縮放到照片上。
+              // 參數格式: drawImage(來源, 來源X, 來源Y, 來源寬, 來源高, 目標X, 目標Y, 目標寬, 目標高)
+              ctx.drawImage(
+                  arCanvas, 
+                  0, 0, arCanvas.width, arCanvas.height, // 來源端：抓取完整的 AR 畫布原始尺寸
+                  0, 0, mergeCanvas.width, mergeCanvas.height // 目標端：縮放到符合照片的尺寸
+              );
 
-              // 6. 將合併好的畫布轉成圖片並下載
+              // --- 步驟 C: 下載圖片 ---
+              // 轉換為高品質 JPEG (相容性較好)
+              const dataURL = mergeCanvas.toDataURL('image/jpeg', 0.95);
+              
               const link = document.createElement('a');
-              link.download = 'mrt-window-ar.png'; // 設定檔名
-              // 將畫布轉為高品質 PNG
-              link.href = mergeCanvas.toDataURL('image/png', 1.0); 
-              link.click(); // 觸發下載行為
+              link.download = 'mrt-ar-photo.jpg';
+              link.href = dataURL;
+              link.click();
 
-              // 7. 恢復按鈕顯示
+              // 恢復按鈕顯示
               photoUI.style.display = 'flex';
-          }, 200); // 延遲 200ms 給瀏覽器一點反應時間
+          });
         });
 
       });
     </script>
-  </body>
-</html>
