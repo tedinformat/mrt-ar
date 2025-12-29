@@ -2,63 +2,69 @@
 <html lang="zh-TW">
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <title>捷運窗景 AR 偵測拍照版</title>
+    <title>捷運窗景 AR 中心偵測版</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
-      body { margin: 0; overflow: hidden; font-family: sans-serif; }
+      body { margin: 0; overflow: hidden; font-family: "Microsoft JhengHei", sans-serif; }
       
-      /* --- UI 層 (按鈕、提示) --- */
+      /* --- UI 層設定 --- */
       .ui-container {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         pointer-events: none; z-index: 999;
         display: flex; flex-direction: column; justify-content: center; align-items: center;
       }
 
-      /* 1. 搜尋中的提示 (一開始顯示) */
+      /* 1. 掃描中介面 */
       #scanning-ui {
         display: flex; flex-direction: column; align-items: center;
         transition: opacity 0.3s;
       }
       .scan-guide-box {
-        width: 60vw; height: 60vw; /* 正方形掃描框 */
-        border: 3px solid rgba(0, 255, 0, 0.8);
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        width: 50vw; height: 50vw; /* 縮小一點，引導民眾靠近中心 */
+        border: 4px solid rgba(0, 255, 0, 0.9);
+        border-radius: 12px;
+        box-shadow: 0 0 15px rgba(0, 255, 0, 0.6);
         position: relative;
+        background: rgba(0, 0, 0, 0.1); /* 稍微加深框內 */
       }
-      /* 掃描線動畫 */
+      /* 掃描動態線條 */
       .scan-line {
-        width: 100%; height: 2px; background: #00ff00;
+        width: 100%; height: 3px; background: #00ff00;
         position: absolute; top: 0;
-        animation: scanMove 2s infinite linear;
+        box-shadow: 0 0 4px #00ff00;
+        animation: scanMove 2s infinite ease-in-out;
       }
-      @keyframes scanMove { 0% {top: 0%;} 50% {top: 100%;} 100% {top: 0%;} }
+      @keyframes scanMove { 0% {top: 5%; opacity: 0;} 50% {top: 95%; opacity: 1;} 100% {top: 5%; opacity: 0;} }
       
       .instruction-text {
-        margin-top: 20px; color: white; background: rgba(0,0,0,0.6);
-        padding: 10px 20px; border-radius: 20px; text-align: center;
+        margin-top: 30px; color: white; background: rgba(0,0,0,0.7);
+        padding: 12px 24px; border-radius: 30px; text-align: center;
+        font-size: 16px; letter-spacing: 1px;
+        border: 1px solid rgba(255,255,255,0.3);
       }
 
-      /* 2. 抓到圖後的拍照介面 (一開始隱藏) */
+      /* 2. 拍照介面 (隱藏) */
       #photo-ui {
         display: none; 
         position: absolute; bottom: 50px;
         flex-direction: column; align-items: center;
       }
       .photo-hint {
-        color: white; text-shadow: 1px 1px 2px black; margin-bottom: 15px;
-        background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 15px;
+        color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 20px;
+        background: rgba(0,0,0,0.4); padding: 8px 16px; border-radius: 20px;
+        font-size: 14px; pointer-events: auto; /* 允許點擊提示 */
       }
       .shutter-button {
-        width: 70px; height: 70px;
-        background-color: rgba(255, 255, 255, 0.9);
-        border: 4px solid rgba(200, 200, 200, 0.8);
+        width: 76px; height: 76px;
+        background-color: rgba(255, 255, 255, 0.95);
+        border: 5px solid rgba(220, 220, 220, 0.6);
         border-radius: 50%; cursor: pointer; pointer-events: auto;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.4);
+        transition: transform 0.1s;
       }
-      .shutter-button:active { transform: scale(0.95); background-color: white; }
+      .shutter-button:active { transform: scale(0.9); background-color: white; }
 
     </style>
 </head>
@@ -68,18 +74,18 @@
       
       <div id="scanning-ui">
         <div class="scan-guide-box"><div class="scan-line"></div></div>
-        <div class="instruction-text">請掃描窗框上的圖形 (12cm)</div>
+        <div class="instruction-text">請掃描窗戶正中央的圖形</div>
       </div>
 
       <div id="photo-ui">
-        <div class="photo-hint">已鎖定！請調整角度與窗景合照</div>
+        <div class="photo-hint">已鎖定！按下快門融合窗景</div>
         <div class="shutter-button" id="shutterBtn"></div>
       </div>
 
     </div>
 
     <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind; uiScanning: no;" 
+      mindar-image="imageTargetSrc: ./targets.mind; uiScanning: no; filterMinCF:0.0001; filterBeta: 0.001;" 
       color-space="sRGB" 
       renderer="colorManagement: true, physicallyCorrectLights, preserveDrawingBuffer: true" 
       vr-mode-ui="enabled: false" 
@@ -95,8 +101,8 @@
         
         <a-image 
           src="#barcodeImg" 
-          position="4.1 2.9 0.05" 
-          scale="9.25 6.5 1" 
+          position="0 0 0.05" 
+          scale="9.25 6.58 1" 
           rotation="0 0 0" 
           opacity="0.95" 
           alpha-test="0.5"
@@ -113,57 +119,55 @@
         const target = document.querySelector('#mytarget');
         const sceneEl = document.querySelector('a-scene');
 
-        // 1. 偵測事件監聽
+        // 1. 狀態切換
         target.addEventListener("targetFound", event => {
-          // 抓到圖了 -> 隱藏掃描框，顯示拍照按鈕
           scanningUI.style.display = 'none';
           photoUI.style.display = 'flex';
         });
 
         target.addEventListener("targetLost", event => {
-          // 圖跑掉了 -> 恢復掃描框
           scanningUI.style.display = 'flex';
           photoUI.style.display = 'none';
         });
 
-        // 2. 拍照合成邏輯 (Canvas Merge)
+        // 2. 拍照合成功能
         shutterBtn.addEventListener('click', function() {
           
-          // 暫時隱藏 UI
+          // 隱藏 UI 以便截圖
           photoUI.style.display = 'none';
 
-          // 確保在畫面渲染當下執行
           requestAnimationFrame(() => {
-              const video = document.querySelector('video'); // MindAR 的背景影片
-              const arCanvas = sceneEl.canvas; // AR 物件層
+              const video = document.querySelector('video');
+              const arCanvas = sceneEl.canvas;
 
-              if (!video || !arCanvas) return;
+              if (!video || !arCanvas) {
+                  photoUI.style.display = 'flex';
+                  return;
+              }
 
-              // 建立合成畫布
               const mergeCanvas = document.createElement('canvas');
               mergeCanvas.width = video.videoWidth;
               mergeCanvas.height = video.videoHeight;
               const ctx = mergeCanvas.getContext('2d');
 
-              // A. 畫背景 (攝影機)
+              // A. 繪製背景
               ctx.drawImage(video, 0, 0, mergeCanvas.width, mergeCanvas.height);
 
-              // B. 畫前景 (AR Barcode)
-              // 修正 Retina 螢幕解析度問題：使用 9 參數繪製法
+              // B. 繪製 AR 前景 (解決 Retina 螢幕比例問題)
               ctx.drawImage(
                   arCanvas, 
-                  0, 0, arCanvas.width, arCanvas.height, // 來源：完整抓取
-                  0, 0, mergeCanvas.width, mergeCanvas.height // 目標：縮放貼合
+                  0, 0, arCanvas.width, arCanvas.height, 
+                  0, 0, mergeCanvas.width, mergeCanvas.height
               );
 
-              // C. 下載存檔
+              // C. 輸出圖片
               const link = document.createElement('a');
               const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-              link.download = `ar-window-${timestamp}.jpg`;
+              link.download = `mrt-ar-${timestamp}.jpg`;
               link.href = mergeCanvas.toDataURL('image/jpeg', 0.95);
               link.click();
 
-              // 恢復 UI
+              // 恢復顯示
               setTimeout(() => {
                 photoUI.style.display = 'flex';
               }, 500);
