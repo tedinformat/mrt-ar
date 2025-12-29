@@ -2,44 +2,82 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>捷運窗景 AR 體驗</title>
+    <title>捷運窗景 AR 互動 - 拍照版</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
       body { margin: 0; overflow: hidden; }
       
-      #ui-layer {
+      /* --- UI 共用層設定 --- */
+      .ui-container {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         pointer-events: none; z-index: 999;
         display: flex; flex-direction: column; justify-content: center; align-items: center;
       }
 
+      /* --- 1. 引導層 (一開始顯示) --- */
+      #guide-ui {
+        /* 預設顯示 */
+        display: flex; 
+        flex-direction: column; align-items: center;
+        transition: opacity 0.5s; /* 讓消失時有淡出效果 */
+      }
+
       .guide-frame {
-        width: 80vw; height: 55vh;
-        border: 2px dashed rgba(255, 255, 255, 0.7);
-        border-radius: 12px;
+        width: 90vw; height: 60vh;
+        border: 3px dashed rgba(255, 255, 255, 0.8);
+        border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5);
       }
       
       .instruction {
-        margin-top: 20px; color: white; background: rgba(0,0,0,0.6);
-        padding: 10px 20px; border-radius: 20px; font-family: sans-serif;
+        margin-top: 25px; color: white; background: rgba(0,0,0,0.7);
+        padding: 12px 24px; border-radius: 30px; font-family: sans-serif;
+        font-size: 18px; text-align: center; text-shadow: 1px 1px 2px black;
+      }
+
+      /* --- 2. 拍照層 (一開始隱藏) --- */
+      #photo-ui {
+        /* 預設隱藏，位置在最下方 */
+        display: none; 
+        justify-content: center; align-items: flex-end;
+        padding-bottom: 40px;
+        transition: opacity 0.5s;
+      }
+
+      /* 快門按鈕樣式 */
+      .shutter-button {
+        width: 70px; height: 70px;
+        background-color: rgba(255, 255, 255, 0.8);
+        border-radius: 50%;
+        border: 5px solid rgba(200, 200, 200, 0.5);
+        cursor: pointer; pointer-events: auto; /* 讓按鈕可以被點擊 */
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      }
+      .shutter-button:active {
+        background-color: white; transform: scale(0.95); /* 點擊時的動畫 */
       }
     </style>
   </head>
   <body>
 
-    <div id="ui-layer">
-      <div class="guide-frame"></div>
-      <div class="instruction">請掃描左下角的圖標</div>
+    <div class="ui-container">
+      <div id="guide-ui">
+        <div class="guide-frame"></div>
+        <div class="instruction">請將虛線框對準窗戶角落貼紙</div>
+      </div>
+      <div id="photo-ui">
+        <div class="shutter-button" id="shutterBtn"></div>
+      </div>
     </div>
 
     <a-scene 
       mindar-image="imageTargetSrc: ./targets.mind; uiScanning: yes;" 
       color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
+      renderer="colorManagement: true, physicallyCorrectLights, preserveDrawingBuffer: true" 
       vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false">
+      device-orientation-permission-ui="enabled: false"
+      screenshot>
 
       <a-assets>
         <img id="barcodeImg" src="./barcode.png" />
@@ -47,18 +85,69 @@
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <a-entity mindar-image-target="targetIndex: 0">
+      <a-entity id="mytarget" mindar-image-target="targetIndex: 0">
         
         <a-image 
           src="#barcodeImg" 
-          position="10.6 7.4 0" 
+          position="10.6 7.4 0.05" 
           scale="22.2 15.8 1" 
           rotation="0 0 0" 
-          opacity="0.9" 
+          opacity="0.95" 
           alpha-test="0.5"
         ></a-image>
 
       </a-entity>
     </a-scene>
+
+    <script>
+      // 等待網頁載入完成
+      document.addEventListener("DOMContentLoaded", function() {
+        
+        // 1. 取得 HTML 元素
+        const guideUI = document.querySelector('#guide-ui');
+        const photoUI = document.querySelector('#photo-ui');
+        const shutterBtn = document.querySelector('#shutterBtn');
+        const target = document.querySelector('#mytarget');
+        const sceneEl = document.querySelector('a-scene');
+
+        // 2. 監聽 AR 事件：抓到圖了！(targetFound)
+        target.addEventListener("targetFound", event => {
+          console.log("抓到目標，隱藏引導 UI，顯示拍照按鈕");
+          guideUI.style.display = 'none';  // 隱藏引導
+          photoUI.style.display = 'flex';  // 顯示拍照按鈕
+        });
+
+        // 3. 監聽 AR 事件：圖不見了！(targetLost)
+        target.addEventListener("targetLost", event => {
+          console.log("目標丟失，顯示引導 UI，隱藏拍照按鈕");
+          guideUI.style.display = 'flex';  // 顯示引導
+          photoUI.style.display = 'none';  // 隱藏拍照按鈕
+        });
+
+        // 4. 實作拍照功能
+        shutterBtn.addEventListener('click', function() {
+          // 暫時隱藏按鈕自己，避免截圖截到按鈕
+          photoUI.style.display = 'none';
+
+          // 稍微延遲一下再拍照，確保 UI 已經隱藏
+          setTimeout(() => {
+              // 呼叫 A-Frame 的截圖功能
+              // 注意：這會同時截取攝影機背景和 AR 物件
+              const canvas = sceneEl.components.screenshot.getCanvas('perspective');
+              
+              // 建立下載連結
+              const link = document.createElement('a');
+              link.download = 'mrt-ar-photo.png'; // 設定下載檔名
+              link.href = canvas.toDataURL('image/png'); // 將畫布轉為圖片資料
+              link.click(); // 觸發下載
+
+              // 拍完照後，把按鈕顯示回來
+              photoUI.style.display = 'flex';
+          }, 100);
+        });
+
+      });
+    </script>
+
   </body>
 </html>
