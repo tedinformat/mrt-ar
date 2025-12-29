@@ -1,170 +1,175 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>捷運窗景互動相框</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>捷運窗景 AR 偵測拍照版</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: black; }
+      body { margin: 0; overflow: hidden; font-family: sans-serif; }
+      
+      /* --- UI 層 (按鈕、提示) --- */
+      .ui-container {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none; z-index: 999;
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+      }
 
-        /* 1. 全螢幕相機容器 */
-        #camera-container {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 1;
-        }
-        /* 讓影片填滿螢幕 (像 IG 限動那樣) */
-        #camera-feed {
-            width: 100%; height: 100%;
-            object-fit: cover; 
-            transform: scaleX(1); /* 後鏡頭不用鏡像翻轉 */
-        }
+      /* 1. 搜尋中的提示 (一開始顯示) */
+      #scanning-ui {
+        display: flex; flex-direction: column; align-items: center;
+        transition: opacity 0.3s;
+      }
+      .scan-guide-box {
+        width: 60vw; height: 60vw; /* 正方形掃描框 */
+        border: 3px solid rgba(0, 255, 0, 0.8);
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        position: relative;
+      }
+      /* 掃描線動畫 */
+      .scan-line {
+        width: 100%; height: 2px; background: #00ff00;
+        position: absolute; top: 0;
+        animation: scanMove 2s infinite linear;
+      }
+      @keyframes scanMove { 0% {top: 0%;} 50% {top: 100%;} 100% {top: 0%;} }
+      
+      .instruction-text {
+        margin-top: 20px; color: white; background: rgba(0,0,0,0.6);
+        padding: 10px 20px; border-radius: 20px; text-align: center;
+      }
 
-        /* 2. Barcode 圖層 (浮在相機上面) */
-        #overlay-layer {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 2;
-            pointer-events: none; /* 讓點擊穿透，不會擋住操作 */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+      /* 2. 抓到圖後的拍照介面 (一開始隱藏) */
+      #photo-ui {
+        display: none; 
+        position: absolute; bottom: 50px;
+        flex-direction: column; align-items: center;
+      }
+      .photo-hint {
+        color: white; text-shadow: 1px 1px 2px black; margin-bottom: 15px;
+        background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 15px;
+      }
+      .shutter-button {
+        width: 70px; height: 70px;
+        background-color: rgba(255, 255, 255, 0.9);
+        border: 4px solid rgba(200, 200, 200, 0.8);
+        border-radius: 50%; cursor: pointer; pointer-events: auto;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      }
+      .shutter-button:active { transform: scale(0.95); background-color: white; }
 
-        /* 您的 Barcode 圖片設定 */
-        #barcode-img {
-            /* 這裡設定圖片在螢幕上的大小 */
-            width: 85%;  /* 佔螢幕寬度 85% */
-            max-width: 600px; /* 最大不超過 600px */
-            height: auto;
-            opacity: 0.95; /* 稍微透明一點點更有質感 */
-            /* 如果想要圖片不在正中間，可以用 margin-top 來調整 */
-        }
-
-        /* 3. 拍照按鈕區域 */
-        #ui-layer {
-            position: fixed; bottom: 40px; left: 0; width: 100%;
-            z-index: 3;
-            display: flex; justify-content: center;
-        }
-
-        .shutter-btn {
-            width: 70px; height: 70px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: 4px solid rgba(200, 200, 200, 0.6);
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            transition: transform 0.1s;
-        }
-        .shutter-btn:active { transform: scale(0.9); background-color: white; }
-
-        /* 錯誤訊息 (沒開相機權限時顯示) */
-        #error-msg {
-            display: none; position: fixed; top: 50%; width: 100%; text-align: center;
-            color: white; z-index: 99; font-family: sans-serif;
-        }
     </style>
 </head>
 <body>
 
-    <div id="error-msg">請允許相機權限以進行體驗</div>
+    <div class="ui-container">
+      
+      <div id="scanning-ui">
+        <div class="scan-guide-box"><div class="scan-line"></div></div>
+        <div class="instruction-text">請掃描窗框上的圖形 (12cm)</div>
+      </div>
 
-    <div id="camera-container">
-        <video id="camera-feed" autoplay playsinline muted></video>
+      <div id="photo-ui">
+        <div class="photo-hint">已鎖定！請調整角度與窗景合照</div>
+        <div class="shutter-button" id="shutterBtn"></div>
+      </div>
+
     </div>
 
-    <div id="overlay-layer">
-        <img id="barcode-img" src="./barcode.png" alt="Barcode Overlay">
-    </div>
+    <a-scene 
+      mindar-image="imageTargetSrc: ./targets.mind; uiScanning: no;" 
+      color-space="sRGB" 
+      renderer="colorManagement: true, physicallyCorrectLights, preserveDrawingBuffer: true" 
+      vr-mode-ui="enabled: false" 
+      device-orientation-permission-ui="enabled: false">
 
-    <div id="ui-layer">
-        <div class="shutter-btn" id="shutterBtn"></div>
-    </div>
+      <a-assets>
+        <img id="barcodeImg" src="./barcode.png" />
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <a-entity id="mytarget" mindar-image-target="targetIndex: 0">
+        
+        <a-image 
+          src="#barcodeImg" 
+          position="4.1 2.9 0.05" 
+          scale="9.25 6.5 1" 
+          rotation="0 0 0" 
+          opacity="0.95" 
+          alpha-test="0.5"
+        ></a-image>
+
+      </a-entity>
+    </a-scene>
 
     <script>
-        // 取得元素
-        const video = document.getElementById('camera-feed');
-        const shutterBtn = document.getElementById('shutterBtn');
-        const barcodeImg = document.getElementById('barcode-img');
-        const errorMsg = document.getElementById('error-msg');
+      document.addEventListener("DOMContentLoaded", function() {
+        const scanningUI = document.querySelector('#scanning-ui');
+        const photoUI = document.querySelector('#photo-ui');
+        const shutterBtn = document.querySelector('#shutterBtn');
+        const target = document.querySelector('#mytarget');
+        const sceneEl = document.querySelector('a-scene');
 
-        // 1. 啟動相機功能
-        async function startCamera() {
-            try {
-                // 請求使用後鏡頭 (environment)
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: { exact: "environment" } },
-                    audio: false 
-                }).catch(e => {
-                    // 如果沒有後鏡頭(像電腦)，就隨便抓一個鏡頭
-                    return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                });
-                
-                video.srcObject = stream;
-            } catch (err) {
-                console.error("相機啟動失敗:", err);
-                errorMsg.style.display = 'block';
-                errorMsg.innerText = "無法啟動相機，請檢查權限或使用 Safari/Chrome 開啟";
-            }
-        }
-
-        // 頁面載入後立即啟動
-        window.addEventListener('load', startCamera);
-
-        // 2. 拍照合成邏輯 (最強大的 Canvas 合成術)
-        shutterBtn.addEventListener('click', () => {
-            // 暫時隱藏按鈕
-            shutterBtn.style.opacity = '0';
-
-            setTimeout(() => {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-
-                // 設定畫布大小等於影片原始解析度 (確保高畫質)
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-
-                // A. 繪製相機背景
-                // 為了處理 object-fit: cover 的裁切問題，我們需要計算比例
-                const videoAspect = video.videoWidth / video.videoHeight;
-                const screenAspect = window.innerWidth / window.innerHeight;
-                
-                // 這邊簡單處理：直接把影片拉伸填滿畫布 (最穩定)
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                // B. 繪製 Barcode 圖片
-                // 我們需要計算圖片在螢幕上的相對位置，換算回畫布上的位置
-                
-                // 1. 圖片在螢幕上的顯示寬度
-                const renderImg = barcodeImg.getBoundingClientRect();
-                const videoRect = video.getBoundingClientRect();
-
-                // 2. 計算縮放比例 (畫布尺寸 / 螢幕尺寸)
-                // 因為 object-fit: cover，這裡用一種近似算法確保圖片位置大致正確
-                // 在手機直式拍攝下，通常以寬度為基準
-                const scaleFactor = canvas.width / window.innerWidth;
-
-                // 3. 計算圖片在畫布上的大小與位置
-                const drawWidth = renderImg.width * scaleFactor;
-                const drawHeight = renderImg.height * scaleFactor;
-                
-                // 置中計算：(畫布寬 - 圖片寬) / 2
-                const drawX = (canvas.width - drawWidth) / 2;
-                // 垂直置中：(畫布高 - 圖片高) / 2
-                const drawY = (canvas.height - drawHeight) / 2;
-
-                // 執行繪製圖片
-                ctx.drawImage(barcodeImg, drawX, drawY, drawWidth, drawHeight);
-
-                // C. 下載圖片
-                const link = document.createElement('a');
-                link.download = 'mrt-photo.jpg';
-                link.href = canvas.toDataURL('image/jpeg', 0.95);
-                link.click();
-
-                // 恢復按鈕
-                shutterBtn.style.opacity = '1';
-            }, 100);
+        // 1. 偵測事件監聽
+        target.addEventListener("targetFound", event => {
+          // 抓到圖了 -> 隱藏掃描框，顯示拍照按鈕
+          scanningUI.style.display = 'none';
+          photoUI.style.display = 'flex';
         });
+
+        target.addEventListener("targetLost", event => {
+          // 圖跑掉了 -> 恢復掃描框
+          scanningUI.style.display = 'flex';
+          photoUI.style.display = 'none';
+        });
+
+        // 2. 拍照合成邏輯 (Canvas Merge)
+        shutterBtn.addEventListener('click', function() {
+          
+          // 暫時隱藏 UI
+          photoUI.style.display = 'none';
+
+          // 確保在畫面渲染當下執行
+          requestAnimationFrame(() => {
+              const video = document.querySelector('video'); // MindAR 的背景影片
+              const arCanvas = sceneEl.canvas; // AR 物件層
+
+              if (!video || !arCanvas) return;
+
+              // 建立合成畫布
+              const mergeCanvas = document.createElement('canvas');
+              mergeCanvas.width = video.videoWidth;
+              mergeCanvas.height = video.videoHeight;
+              const ctx = mergeCanvas.getContext('2d');
+
+              // A. 畫背景 (攝影機)
+              ctx.drawImage(video, 0, 0, mergeCanvas.width, mergeCanvas.height);
+
+              // B. 畫前景 (AR Barcode)
+              // 修正 Retina 螢幕解析度問題：使用 9 參數繪製法
+              ctx.drawImage(
+                  arCanvas, 
+                  0, 0, arCanvas.width, arCanvas.height, // 來源：完整抓取
+                  0, 0, mergeCanvas.width, mergeCanvas.height // 目標：縮放貼合
+              );
+
+              // C. 下載存檔
+              const link = document.createElement('a');
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              link.download = `ar-window-${timestamp}.jpg`;
+              link.href = mergeCanvas.toDataURL('image/jpeg', 0.95);
+              link.click();
+
+              // 恢復 UI
+              setTimeout(() => {
+                photoUI.style.display = 'flex';
+              }, 500);
+          });
+        });
+      });
     </script>
 </body>
 </html>
